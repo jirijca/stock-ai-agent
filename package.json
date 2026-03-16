@@ -1,0 +1,29 @@
+{
+  "name": "stock-ai-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jirijca/stock-ai-agent.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jirijca/stock-ai-agent/issues"
+  },
+  "homepage": "https://github.com/jirijca/stock-ai-agent#readme",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.13.6",
+    "dotenv": "^17.3.1",
+    "nodemailer": "^8.0.2",
+    "rss-parser": "^3.13.0",
+    "yahoo-finance2": "^3.13.2"
+  }
+}

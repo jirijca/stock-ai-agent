@@ -1,0 +1,27 @@
+name: AGENT18
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22  # Tady jsme to zvedli z 20 na 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run agent
+        run: node agent.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
