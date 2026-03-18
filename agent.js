@@ -7,9 +7,12 @@ import fs from "fs/promises";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const parser = new Parser();
 
-const STOCKS = ["GOOG", "MDB", "VKTX", "NVDA", "ONDS", "VUZI", "IPWR", "CPRX", "TAOP", "3CP", "META", "ANGO", "ANNX", "MVIS", "AREC", "ASST", "NRDY", "ALAR", "TISC", "INDI", "NU", "IREN", "SOFI", "SOL", "CPNG", "V", "MDWD", "MVST", "CBAT", "JTAI", "SANA", "NVVE", "ATOS", "BTAI", "ARQ", "ENVX", "IRON", "GRYP", "NIO", "MRKR", "CAN", "QTBS", "HRMY", "ASBP", "RZLV", "OKLO", "GRAB", "AVGO", "RHM", "CRDO", "NUVB", "MSFT", "TTWO"];
+const STOCKS = ["GOOG", "MDB", "VKTX", "NVDA", "ONDS", "VUZI", "IPWR", "CPRX", "TAOP", "3CP", "META", "ANGO", "ANNX", "MVIS", "AREC", "ASST", "NRDY", "ALAR", "TISC", "INDI", "NU", "IREN", "SOFI", "SOL", "CPNG", "V", "MDWD", "MVST", "CBAT", "JTAI", "SANA", "NVVE", "ATOS", "BTAI", "ARQ", "ENVX", "IRON", "GRYP", "NIO", "MRKR", "CAN", "QTBS", "HRMY", "ASBP", "RZLV", "OKLO", "GRAB", "AVGO", "RHM", "CRDO", "NUVB", "MSFT", "TTWO", "ASML", "RIOT", "O"];
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
-const BATCH_SIZE = 3;
+const BATCH_SIZE = 2; // Sníženo pro jistotu
+
+// Pomocná funkce pro pauzu
+const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 async function getUsdCzkRate() {
     try {
@@ -34,23 +37,36 @@ async function getStockData(ticker) {
 }
 
 async function runAgent() {
+    console.log("🚀 Startuji AGENT19 s ochranou proti limitům...");
     const portfolio = JSON.parse(await fs.readFile("./portfolio.json", "utf-8"));
     const usdCzkRate = await getUsdCzkRate();
     const results = [];
 
     for (let i = 0; i < STOCKS.length; i += BATCH_SIZE) {
         const batch = STOCKS.slice(i, i + BATCH_SIZE);
+        console.log(`Zpracovávám dávku: ${batch.join(", ")}...`);
+        
         const res = await Promise.all(batch.map(async (t) => {
             const data = await getStockData(t);
             if (!data) return null;
-            const analysis = await groq.chat.completions.create({
-                messages: [{ role: "system", content: "Jsi analytik. Piš česky, max 2 úderné věty. Verdikt: [KOUPIT/DRŽET/REDUKOVAT]." }, { role: "user", content: `Ticker: ${t}, Cena: ${data.price} USD, News: ${data.news.map(n => n.title).join(" | ")}` }],
-                model: "llama-3.3-70b-versatile"
-            });
-            data.analysis = analysis.choices[0]?.message?.content;
-            return data;
+            try {
+                const analysis = await groq.chat.completions.create({
+                    messages: [{ role: "system", content: "Jsi analytik. Piš česky, max 2 úderné věty. Verdikt: [KOUPIT/DRŽET/REDUKOVAT]." }, { role: "user", content: `Ticker: ${t}, Cena: ${data.price} USD` }],
+                    model: "llama-3.3-70b-versatile"
+                });
+                data.analysis = analysis.choices[0]?.message?.content;
+                return data;
+            } catch (ae) {
+                console.error(`Chyba AI u ${t}:`, ae.message);
+                data.analysis = "Analýza dočasně nedostupná (limit požadavků).";
+                return data;
+            }
         }));
+        
         results.push(...res.filter(r => r !== null));
+        
+        // KLÍČOVÝ KROK: Po každé dávce počkáme 2,5 vteřiny, abychom nenaštvali Groq
+        await delay(2500); 
     }
 
     let totalValUsd = 0, totalInvUsd = 0;
@@ -78,7 +94,7 @@ async function runAgent() {
         const isOwned = !!p?.shares;
         const changeColor = d.change >= 0 ? "#27ae60" : "#c0392b";
         
-        html += `<div style="background: white; padding: 20px; margin-top: 20px; border-radius: 12px; border-left: 6px solid ${isOwned ? '#3498db' : '#ccc'}; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        html += `<div style="background: white; padding: 20px; margin-top: 20px; border-radius: 12px; border-left: 6px solid ${isOwned ? '#3498db' : '#ccc'};">
             <div style="display: flex; justify-content: space-between; align-items: baseline;">
                 <b style="font-size: 1.4em;">${d.ticker}</b>
                 <div style="text-align: right;">
@@ -99,7 +115,7 @@ async function runAgent() {
                     <span>Moje pozice: <b>${Math.round(currentValCzk).toLocaleString('cs-CZ')} CZK</b></span>
                     <b style="color: ${pnlColor};">${profitPct}% (${Math.round(profitCzk).toLocaleString('cs-CZ')} CZK)</b>
                 </div>
-                <small style="color: #7f8c8d;">Vlastním ${p.shares} ks | Průměrná nákupka: ${avgPriceUsd} USD</small>
+                <small style="color: #7f8c8d;">Vlastním ${p.shares} ks | Průměrka: ${avgPriceUsd} USD</small>
             </div>`;
         }
 
@@ -115,8 +131,9 @@ async function runAgent() {
     html += `<p style="text-align: center; color: #bdc3c7; font-size: 0.8em; margin-top: 20px;">AGENT19 Enterprise Intelligence</p></div>`;
 
     const transporter = nodemailer.createTransport({ service: "gmail", auth: { user: process.env.MAIL_USER, pass: process.env.GMAIL_PASS } });
-    await transporter.sendMail({ from: `"AI Portfolio Agent" <${process.env.MAIL_USER}>`, to: EMAIL_RECIPIENT, subject: `Portfolio Intelligence: ${pnlPct}% CZK`, html: html });
+    await transporter.sendMail({ from: `"AI Portfolio Agent" <${process.env.MAIL_USER}>`, to: EMAIL_RECIPIENT, subject: `Portfolio Report: ${pnlPct}% CZK`, html: html });
     await fs.writeFile("./history.json", JSON.stringify(results.map(r => ({ticker: r.ticker, price: r.price}))));
+    console.log("✅ Vše hotovo a report odeslán.");
 }
 
 runAgent().catch(console.error);
