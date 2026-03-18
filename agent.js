@@ -6,7 +6,8 @@ import { Groq } from "groq-sdk";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const parser = new Parser();
 
-const STOCKS = ["MSFT", "NVDA", "ASML", "RIOT", "O", "MDB", "V", "AVGO", "IREN", "GOOG", "TSLA"]; // Doplň si libovolně
+// Tvůj seznam akcií
+const STOCKS = ["MSFT", "NVDA", "ASML", "RIOT", "O", "MDB", "V", "AVGO", "IREN", "GOOG", "TSLA"]; 
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
 
 async function getSentiment(ticker, news) {
@@ -21,7 +22,7 @@ async function getSentiment(ticker, news) {
                 content: `Ticker: ${ticker}. Zprávy: ${news.map(n => n.title).join(" | ")}`
             }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0, // Chceme konzistentní čísla
+            temperature: 0,
         });
         return parseFloat(response.choices[0]?.message?.content) || 0;
     } catch (e) { return 0; }
@@ -33,14 +34,18 @@ async function getStockData(ticker) {
         const data = await res.json();
         const quote = data.chart.result[0].meta;
         
+        // --- FILTRACE ZPRÁV (Max 48h staré) ---
         const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${ticker}+stock+news&hl=en-US`);
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        const fortyEightHoursAgo = new Date();
+        fortyEightHoursAgo.setHours(fortyEightHoursAgo.getHours() - 48);
 
         const recentNews = feed.items
-            .filter(item => new Date(item.pubDate) > twoDaysAgo)
-            .slice(0, 3)
-            .map(n => ({ title: n.title }));
+            .filter(item => new Date(item.pubDate) > fortyEightHoursAgo)
+            .slice(0, 3) // Vezmeme max 3 nejnovější
+            .map(n => ({
+                title: n.title,
+                date: new Date(n.pubDate).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })
+            }));
 
         const sentiment = await getSentiment(ticker, recentNews);
 
@@ -52,25 +57,28 @@ async function getStockData(ticker) {
             sentiment: sentiment
         };
     } catch (err) {
+        console.error(`Chyba u ${ticker}:`, err.message);
         return null;
     }
 }
 
 async function runAgent() {
-    console.log("🚀 Analyzuji trh a sentiment...");
+    console.log("🚀 Startuji hloubkovou analýzu...");
     const results = [];
+    
     for (const ticker of STOCKS) {
         const data = await getStockData(ticker);
         if (data) {
-            console.log(`✅ ${ticker}: ${data.sentiment > 0 ? '📈' : data.sentiment < 0 ? '📉' : '😐'} (${data.sentiment})`);
+            console.log(`✅ Zpracováno: ${ticker}`);
             results.push(data);
         }
     }
 
+    // AI Shrnutí celkové situace
     const aiSummary = await groq.chat.completions.create({
         messages: [{
             role: "system",
-            content: "Jsi analytik. Shrň 3 nejdůležitější události z dodaných dat v češtině. Buď stručný."
+            content: "Jsi elitní analytik. Podívej se na data a zprávy. Vyber 3 nejzajímavější události a shrň je česky v pár odrážkách."
         }, {
             role: "user",
             content: JSON.stringify(results.filter(r => r.news.length > 0))
@@ -78,23 +86,27 @@ async function runAgent() {
         model: "llama-3.3-70b-versatile",
     }).then(res => res.choices[0]?.message?.content).catch(() => "Shrnutí nedostupné.");
 
-    const priceList = results.map(d => {
-        let icon = d.sentiment > 0.2 ? "🟢" : d.sentiment < -0.2 ? "🔴" : "⚪";
-        return `${icon} ${d.ticker.padEnd(5)} | ${d.price.toFixed(2).padStart(8)} | ${d.change.toFixed(2).padStart(6)}% | Senti: ${d.sentiment.toFixed(1)}`;
-    }).join("\n");
+    // --- FORMÁTOVÁNÍ DETAILNÍHO REPORTU ---
+    const detailedList = results.map(d => {
+        const icon = d.sentiment > 0.2 ? "🟢" : d.sentiment < -0.2 ? "🔴" : "⚪";
+        const newsSection = d.news.length > 0 
+            ? d.news.map(n => `   📰 [${n.date}] ${n.title}`).join("\n") 
+            : "   (Žádné nové zprávy za 48h)";
+
+        return `${icon} ${d.ticker.padEnd(5)} | ${d.price.toFixed(2)} | ${d.change.toFixed(2)}% | Senti: ${d.sentiment.toFixed(1)}\n${newsSection}`;
+    }).join("\n\n" + "-".repeat(45) + "\n\n");
 
     const emailBody = `
-=== REPORT TRHU (Sentiment & Ceny) ===
+=== DETAILNÍ AKCIOVÝ REPORT ===
+(Filtrováno na zprávy < 48h)
 
-Stav | Ticker|   Cena     | Změna   | Nálada
--------------------------------------------
-${priceList}
+${detailedList}
 
-(Legenda: 🟢 Pozitivní, 🔴 Negativní, ⚪ Neutrální)
-
----
-🤖 HLAVNÍ POSTŘEHY:
+${"=".repeat(45)}
+🤖 AI SHRNUTÍ TRHU:
 ${aiSummary}
+
+Přeji úspěšné obchody!
     `;
 
     const transporter = nodemailer.createTransport({
@@ -105,11 +117,11 @@ ${aiSummary}
     await transporter.sendMail({
         from: `"Stock AI Agent" <${process.env.MAIL_USER}>`,
         to: EMAIL_RECIPIENT,
-        subject: `Market Sentiment Report: ${new Date().toLocaleDateString()}`,
+        subject: `Market Report: ${new Date().toLocaleDateString()} (${STOCKS.length} akcií)`,
         text: emailBody
     });
 
-    console.log("✅ Email odeslán.");
+    console.log("✅ Hotovo. Email odeslán.");
 }
 
 runAgent().catch(console.error);
