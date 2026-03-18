@@ -1,17 +1,16 @@
 name: AGENT19
 
 on:
-  workflow_dispatch:  # Ruční spuštění
-  push:               # Při každém pushi do main
+  workflow_dispatch:
+  push:
     branches: [ "main" ]
   schedule:
-    - cron: '0 15 * * *' # Každý den v 16:00 SEČ (15:00 UTC)
+    - cron: '0 15 * * *'
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
     
-    # Nutné pro zápis historie zpět do repozitáře
     permissions:
       contents: write
 
@@ -19,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Důležité pro správné fungování git push
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -41,13 +40,16 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Přidáme pouze soubor historie, aby nedošlo k nechtěným změnám
+          # Synchronizace s tvými posledními pushi
+          git pull --rebase origin main
+          
+          # Přidání history.json (pokud existuje)
           git add history.json || true
           
-          # Commitneme pouze pokud jsou v souboru změny
+          # Kontrola, zda jsou nějaké změny k uložení
           if git diff --cached --quiet; then
-            echo "Žádné změny v historii k uložení."
+            echo "Zádné změny v historii k uložení."
           else
             git commit -m "Automatická aktualizace historie trhu [skip ci]"
-            git push
+            git push origin main
           fi
