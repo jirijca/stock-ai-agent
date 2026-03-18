@@ -1,4 +1,4 @@
-name: AGENT18
+name: AGENT19
 
 on:
   workflow_dispatch:  # Pořád můžeš spustit ručně tlačítkem
@@ -25,7 +25,6 @@ jobs:
       - name: Run agent
         run: node agent.js
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
           MAIL_USER: ${{ secrets.MAIL_USER }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
