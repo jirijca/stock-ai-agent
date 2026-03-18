@@ -1,4 +1,4 @@
-name: AGENT20
+name: AGENT21
 
 on:
   workflow_dispatch:
@@ -34,6 +34,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
           MAIL_USER: ${{ secrets.MAIL_USER }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
 
       - name: Commit and push history update
         run: |
@@ -43,7 +45,7 @@ jobs:
           # 1. Dočasně schováme vytvořený history.json
           git stash
           
-          # 2. Teď můžeme bezpečně udělat pull --rebase
+          # 2. Bezpečný pull --rebase
           git pull --rebase origin main
           
           # 3. Vrátíme schovanou historii zpět
