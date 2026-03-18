@@ -1,4 +1,4 @@
-name: AGENT19
+name: AGENT20
 
 on:
   workflow_dispatch:
@@ -40,15 +40,20 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Synchronizace s tvými posledními pushi
+          # 1. Dočasně schováme vytvořený history.json
+          git stash
+          
+          # 2. Teď můžeme bezpečně udělat pull --rebase
           git pull --rebase origin main
           
-          # Přidání history.json (pokud existuje)
+          # 3. Vrátíme schovanou historii zpět
+          git stash pop || true
+          
+          # 4. Přidáme ji a uložíme
           git add history.json || true
           
-          # Kontrola, zda jsou nějaké změny k uložení
           if git diff --cached --quiet; then
-            echo "Zádné změny v historii k uložení."
+            echo "Žádné změny v historii k uložení."
           else
             git commit -m "Automatická aktualizace historie trhu [skip ci]"
             git push origin main

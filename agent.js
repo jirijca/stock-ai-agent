@@ -7,24 +7,26 @@ import fs from "fs/promises";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const parser = new Parser();
 
-// --- KONFIGURACE ---
-// Přidal jsem tvoje chybějící tickery z portfolia
-const STOCKS = ["MSFT", "NVDA", "ASML", "RIOT", "O", "MDB", "V", "AVGO", "IREN", "GOOG", "TSLA", "VKTX", "ONDS", "GOOGC"]; 
+// --- KONFIGURACE (Všechny tvé tickery) ---
+const STOCKS = [
+  "GOOG", "MDB", "VKTX", "NVDA", "ONDS", "VUZI", "IPWR", "CPRX", "TAOP", "3CP", 
+  "META", "ANGO", "ANNX", "MVIS", "AREC", "ASST", "NRDY", "ALAR", "TISC", "INDI", 
+  "NU", "IREN", "SOFI", "SOL", "CPNG", "V", "MDWD", "MVST", "CBAT", "JTAI", 
+  "SANA", "NVVE", "ATOS", "BTAI", "ARQ", "ENVX", "IRON", "GRYP", "NIO", "MRKR", 
+  "CAN", "QTBS", "HRMY", "ASBP", "RZLV", "OKLO", "GRAB", "AVGO", "RHM", "CRDO", 
+  "NUVB", "MSFT", "TTWO", "ASML", "RIOT", "O"
+];
+
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
-const BATCH_SIZE = 4; 
+const BATCH_SIZE = 3;
 
 // --- POMOCNÉ FUNKCE ---
 
 async function getPortfolio() {
     try {
         const data = await fs.readFile("./portfolio.json", "utf-8");
-        const parsed = JSON.parse(data);
-        console.log("📂 Portfolio úspěšně načteno.");
-        return parsed;
-    } catch (e) {
-        console.error("❌ CHYBA FORMÁTU: Tvůj portfolio.json není validní! Zkontroluj závorky a čárky.");
-        return {};
-    }
+        return JSON.parse(data);
+    } catch (e) { return {}; }
 }
 
 async function getHistory() {
@@ -50,24 +52,36 @@ async function getStockAnalysis(ticker, data, portfolioInfo, lastHistory) {
     if (!data.news?.length) return "⚠️ Žádné čerstvé zprávy k analýze.";
     
     let pnlInfo = (portfolioInfo && portfolioInfo.shares) 
-        ? `Vlastníš ${portfolioInfo.shares} ks, P/L: ${(((data.price - portfolioInfo.avgPrice) / portfolioInfo.avgPrice) * 100).toFixed(2)}%.` 
+        ? `POZOR: Máš v tom peníze! Držíš ${portfolioInfo.shares} ks, tvůj P/L je ${(((data.price - (portfolioInfo.avgPrice || portfolioInfo.vgPrice)) / (portfolioInfo.avgPrice || portfolioInfo.vgPrice)) * 100).toFixed(2)}%.` 
         : "Sledovaná pozice.";
-
-    let histInfo = lastHistory 
-        ? `Změna od včerejška: ${(((data.price - lastHistory.price) / lastHistory.price) * 100).toFixed(2)}%.` 
-        : "";
 
     try {
         const response = await groq.chat.completions.create({
             messages: [
-                { role: "system", content: "Jsi elitní seniorní analytik. Piš nekompromisně, česky, max 3 věty. Na konec dej JEDNO slovo jako verdikt: [KOUPIT / DRŽET / REDUKOVAT / SLEDOVAT]." },
-                { role: "user", content: `Ticker: ${ticker} | Cena: ${data.price} USD | ${histInfo} | ${pnlInfo} | Zprávy: ${data.news.map(n => n.title).join(" | ")}` }
+                { role: "system", content: "Jsi seniorní analytik. Piš úderně, česky, max 2 věty. Verdikt: [KOUPIT / DRŽET / REDUKOVAT / SLEDOVAT]." },
+                { role: "user", content: `Ticker: ${ticker} | Cena: ${data.price} USD | Zprávy: ${data.news.map(n => n.title).join(" | ")}` }
             ],
             model: "llama-3.3-70b-versatile",
             temperature: 0.2,
         });
         return response.choices[0]?.message?.content || "Analýza nedostupná.";
     } catch (e) { return "AI analýza mimo provoz."; }
+}
+
+// --- NOVÁ FUNKCE: GLOBÁLNÍ PŘÍLEŽITOSTI ---
+async function getMarketOpportunities(results) {
+    const summary = results.map(r => `${r.ticker}: ${r.change.toFixed(2)}%`).join(", ");
+    try {
+        const response = await groq.chat.completions.create({
+            messages: [
+                { role: "system", content: "Jsi makroekonomický stratég. Analyzuj seznam akcií a jejich denní pohyb. Zaměř se na geopolitiku, podhodnocené dipy a aktuální příležitosti. Piš česky, odrážkově, max 4 body. Buď konkrétní a dravý." },
+                { role: "user", content: `Aktuální pohyby na mém watchlistu: ${summary}. Jaké jsou dnes největší příležitosti k nákupu nebo ochraně kapitálu?` }
+            ],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.5,
+        });
+        return response.choices[0]?.message?.content || "Strategie pro dnešek není k dispozici.";
+    } catch (e) { return "Chyba při generování makro analýzy."; }
 }
 
 async function getStockData(ticker) {
@@ -81,13 +95,7 @@ async function getStockData(ticker) {
         const change = ((price - meta.previousClose) / meta.previousClose) * 100;
 
         const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${ticker}+stock+news&hl=en-US`);
-        const limitDate = new Date();
-        limitDate.setHours(limitDate.getHours() - 48);
-
-        const news = feed.items
-            .filter(item => new Date(item.pubDate) > limitDate)
-            .slice(0, 3)
-            .map(n => ({ ticker, title: n.title, link: n.link, dateStr: new Date(n.pubDate).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) }));
+        const news = feed.items.slice(0, 2).map(n => ({ ticker, title: n.title, link: n.link }));
 
         return { ticker, price, change, news };
     } catch (err) { return null; }
@@ -96,7 +104,7 @@ async function getStockData(ticker) {
 // --- HLAVNÍ BĚH AGENTA ---
 
 async function runAgent() {
-    console.log("🚀 AGENT19 startuje...");
+    console.log(`🚀 Startuji AGENT19 s příležitostmi...`);
     const [portfolio, history] = await Promise.all([getPortfolio(), getHistory()]);
     const results = [];
 
@@ -113,15 +121,16 @@ async function runAgent() {
         results.push(...batchResults.filter(r => r !== null));
     }
 
-    if (!results.length) return console.error("❌ Žádná data stažena.");
+    const marketOps = await getMarketOpportunities(results);
 
-    // Výpočet portfolia
+    // Výpočty portfolia
     let totalValue = 0, totalInvested = 0, ownedCount = 0;
     results.forEach(d => {
         const p = portfolio[d.ticker];
-        if (p && p.shares && p.avgPrice) {
+        if (p && p.shares && (p.avgPrice || p.vgPrice)) {
+            const avgP = p.avgPrice || p.vgPrice;
             totalValue += d.price * p.shares;
-            totalInvested += p.avgPrice * p.shares;
+            totalInvested += avgP * p.shares;
             ownedCount++;
         }
     });
@@ -131,52 +140,48 @@ async function runAgent() {
     const headerColor = totalPnlCash >= 0 ? "#27ae60" : "#c0392b";
 
     // HTML Generování
-    let html = `<div style="font-family: Arial; max-width: 700px; margin: auto; padding: 20px; background: #f4f7f9;">
-        <div style="background: white; padding: 20px; border-radius: 10px; border-bottom: 6px solid ${headerColor}; text-align: center; margin-bottom: 25px;">
-            <h2 style="margin:0; color:#2c3e50;">Market Intelligence Report</h2>
-            ${ownedCount > 0 ? `<b style="color:${headerColor}; font-size: 1.2em;">Portfolio: ${totalPnlPercent}% (${totalPnlCash} USD)</b>` : ''}
+    let htmlContent = `<div style="font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; background: #f4f7f9;">
+        <div style="background: white; padding: 30px; border-radius: 15px; border-bottom: 8px solid ${headerColor}; text-align: center; margin-bottom: 25px;">
+            <h1 style="margin: 0; color: #2c3e50;">Portfolio Intelligence</h1>
+            <b style="font-size: 1.5em; color: ${headerColor};">P/L: ${totalPnlPercent}% (${totalPnlCash} USD)</b>
+            <p style="color: #7f8c8d;">Aktiva: ${totalValue.toLocaleString('en-US')} USD</p>
         </div>`;
+
+    // SEKCE: PŘÍLEŽITOSTI (Třešnička na dortu)
+    htmlContent += `
+        <div style="background: #fff9db; border: 2px solid #f1c40f; padding: 20px; border-radius: 15px; margin-bottom: 30px;">
+            <h2 style="margin: 0 0 10px; color: #f39c12; font-size: 1.3em;">🔥 Macro & Dip Opportunities</h2>
+            <div style="color: #444; font-size: 0.95em; line-height: 1.6;">
+                ${marketOps.replace(/\n/g, '<br>')}
+            </div>
+        </div>
+    `;
 
     results.forEach(d => {
         const p = portfolio[d.ticker];
-        const isOwned = p && p.shares && p.avgPrice;
+        const isOwned = p && p.shares && (p.avgPrice || p.vgPrice);
         const color = d.change >= 0 ? "#27ae60" : "#c0392b";
 
-        html += `
-            <div style="background: white; padding: 15px; margin-bottom: 20px; border-radius: 10px; border-left: 6px solid ${isOwned ? '#3498db' : '#ccc'}; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                    <b style="font-size: 1.2em;">${d.ticker}</b>
+        htmlContent += `
+            <div style="background: white; padding: 15px; margin-bottom: 15px; border-radius: 12px; border-left: 5px solid ${isOwned ? '#3498db' : '#ccc'};">
+                <div style="display: flex; justify-content: space-between;">
+                    <b>${d.ticker}</b>
                     <b style="color: ${color};">${d.price.toFixed(2)} USD (${d.change.toFixed(2)}%)</b>
-                </div>`;
-
-        if (isOwned) {
-            const pPct = (((d.price - p.avgPrice) / p.avgPrice) * 100).toFixed(2);
-            const pCsh = ((d.price - p.avgPrice) * p.shares).toFixed(2);
-            html += `
-                <div style="background: #e1f5fe; border: 1px solid #3498db; padding: 10px; margin: 10px 0; border-radius: 6px;">
-                    <span style="color: #2980b9;"><b>Tvůj výsledek:</b></span>
-                    <b style="float: right; color: ${pPct >= 0 ? '#27ae60' : '#c0392b'};">${pPct}% (${pCsh} USD)</b>
-                    <div style="font-size: 0.8em; color: #7f8c8d; margin-top: 4px;">Pozice: ${p.shares} ks @ ${p.avgPrice} USD</div>
-                </div>`;
-        }
-
-        html += `
-                <div style="background: #2c3e50; color: #ecf0f1; padding: 12px; border-radius: 6px; margin-top: 10px; font-size: 0.95em;">
-                    ${d.analysis.replace(/\n/g, '<br>')}
                 </div>
-                <div style="font-size: 0.8em; margin-top: 10px; color: #7f8c8d;">
-                    ${d.news.map(n => `• <a href="${n.link}" style="color: #3498db; text-decoration: none;">${n.title}</a>`).join('<br>')}
+                ${isOwned ? `<div style="font-size: 0.85em; color: #3498db; margin: 5px 0;">Pozice: ${(((d.price - (p.avgPrice || p.vgPrice)) / (p.avgPrice || p.vgPrice)) * 100).toFixed(2)}%</div>` : ''}
+                <div style="background: #2c3e50; color: #ecf0f1; padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.9em;">
+                    ${d.analysis.replace(/\n/g, '<br>')}
                 </div>
             </div>`;
     });
 
-    html += `</div>`;
+    htmlContent += `</div>`;
 
     const transporter = nodemailer.createTransport({ service: "gmail", auth: { user: process.env.MAIL_USER, pass: process.env.GMAIL_PASS } });
-    await transporter.sendMail({ from: `"AI Agent" <${process.env.MAIL_USER}>`, to: EMAIL_RECIPIENT, subject: `Report: ${totalPnlPercent}% | ${new Date().toLocaleDateString('cs-CZ')}`, html: html });
+    await transporter.sendMail({ from: `"AI Agent" <${process.env.MAIL_USER}>`, to: EMAIL_RECIPIENT, subject: `Daily Report | ${totalPnlPercent}%`, html: htmlContent });
 
     await saveHistory(results);
-    console.log("✅ Report odeslán.");
+    console.log("✅ Report s příležitostmi odeslán.");
 }
 
 runAgent().catch(console.error);
