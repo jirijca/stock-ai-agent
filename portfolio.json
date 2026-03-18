@@ -1,5 +1,5 @@
 {
-  "GOOGC": { "shares": 4.2, "avgPrice": 312.12 },
+  "GOOG": { "shares": 4.2, "avgPrice": 312.12 },
   "MDB": { "shares": 1, "avgPrice": 258.63 },
   "VKTX": { "shares": 4, "avgPrice": 33.16 },
   "NVDA": { "shares": 2.5, "avgPrice": 181.87 },
@@ -11,7 +11,6 @@
   "3CP": { "shares": 12, "avgPrice": 3.964 },
   "META": { "shares": 0.2, "avgPrice": 629.88 },
   "ANGO": { "shares": 10, "avgPrice": 10.96 },
-  "ANNX": { "shares": 12, "avgPrice": 5.97 },
   "ANNX": { "shares": 12, "avgPrice": 5.97 },
   "MVIS": { "shares": 30, "avgPrice": 0.8389 },
   "AREC": { "shares": 12, "avgPrice": 3.69 },
