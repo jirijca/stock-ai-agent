@@ -1,7 +1,11 @@
 name: AGENT18
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Pořád můžeš spustit ručně tlačítkem
+  push:               # Spustí se při každém nahrání kódu
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 15 * * *' 
 
 jobs:
   run-agent:
@@ -13,7 +17,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22  # Tady jsme to zvedli z 20 na 22
+          node-version: 22
 
       - name: Install dependencies
         run: npm install
