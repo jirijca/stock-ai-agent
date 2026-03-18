@@ -1,111 +1,115 @@
-console.log("--- START AGENTA (HYBRIDNÍ VERZE) ---");
 import "dotenv/config";
 import nodemailer from "nodemailer";
 import Parser from "rss-parser";
+import { Groq } from "groq-sdk";
 
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const parser = new Parser();
-const STOCKS = ["MSFT", "NVDA", "ASML", "RIOT", "O", "MDB", "CBAT", "V", "MDWD", "CPRX", "IPWR", "ANGO", "ARQ", "NRDY", "ANNX", "MVIS", "AREC", "VKTX", "SANA", "ASST", "ALAR", "AVGO", "JTAI", "NVVE", "INDI", "BTAI", "IREN", "ATOS", "ENVX", "ONDS", "GRYP", "IRON", "GRAB", "MRKR", "NB", "CAN", "ASBP", "HRMY", "QBTS", "OKLO", "RZLV", "GOOGC", "CRDO", "NUVB", "RHM", "TTWO", "MSFT", "AVAV", "PBF"];
+
+const STOCKS = ["MSFT", "NVDA", "ASML", "RIOT", "O", "MDB", "V", "AVGO", "IREN", "GOOG", "TSLA"]; // Doplň si libovolně
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
 
-async function getStockPrice(ticker) {
-  try {
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
-    const data = await res.json();
-    const quote = data.chart.result[0].meta;
-    return {
-      price: quote.regularMarketPrice,
-      change: ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100
-    };
-  } catch (err) {
-    return { price: 0, change: 0 };
-  }
+async function getSentiment(ticker, news) {
+    if (!news.length) return 0;
+    try {
+        const response = await groq.chat.completions.create({
+            messages: [{
+                role: "system",
+                content: "Jsi finanční algoritmus. Analyzuj titulky a odpověz POUZE jedním číslem od -1.0 (velmi negativní) do 1.0 (velmi pozitivní). 0.0 je neutrální."
+            }, {
+                role: "user",
+                content: `Ticker: ${ticker}. Zprávy: ${news.map(n => n.title).join(" | ")}`
+            }],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0, // Chceme konzistentní čísla
+        });
+        return parseFloat(response.choices[0]?.message?.content) || 0;
+    } catch (e) { return 0; }
 }
 
-async function getHuggingFaceAnalysis(ticker, news) {
-  if (!news.length) return "Žádné zprávy k analýze.";
-  
-  try {
-    // ZMĚNA: Použití Llama-3, která má na routeru nejlepší podporu
-    const url = "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct";
-    
-    const response = await fetch(url, {
-      headers: { 
-        Authorization: `Bearer ${process.env.HF_TOKEN}`, 
-        "Content-Type": "application/json" 
-      },
-      method: "POST",
-      body: JSON.stringify({
-        inputs: `<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nJsi finanční analytik. Shrň tyto zprávy pro ${ticker} dvěma českými větami: ${news.join(". ")}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`,
-        parameters: { max_new_tokens: 150 }
-      }),
-    });
+async function getStockData(ticker) {
+    try {
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
+        const data = await res.json();
+        const quote = data.chart.result[0].meta;
+        
+        const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${ticker}+stock+news&hl=en-US`);
+        const twoDaysAgo = new Date();
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-    const text = await response.text(); // Nejdřív načteme jako text, abychom viděli chybu
-    
-    if (text.includes("Not Found")) {
-      console.log("   ⚠️ Model na této adrese nenalezen, vracím základní zprávy.");
-      return "AI analýza se připravuje.";
+        const recentNews = feed.items
+            .filter(item => new Date(item.pubDate) > twoDaysAgo)
+            .slice(0, 3)
+            .map(n => ({ title: n.title }));
+
+        const sentiment = await getSentiment(ticker, recentNews);
+
+        return {
+            ticker,
+            price: quote.regularMarketPrice,
+            change: ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100,
+            news: recentNews,
+            sentiment: sentiment
+        };
+    } catch (err) {
+        return null;
     }
-
-    const result = JSON.parse(text);
-
-    if (result.error && result.error.includes("currently loading")) {
-      return "AI model se načítá, zkuste to za chvíli.";
-    }
-
-    if (Array.isArray(result) && result[0]?.generated_text) {
-      // Očištění odpovědi od systémových značek
-      const output = result[0].generated_text;
-      return output.split("<|start_header_id|>assistant<|end_header_id|>")[1]?.trim() || output;
-    }
-    
-    return "AI analýza nedostupná.";
-  } catch (err) {
-    console.log("   ⚠️ Chyba:", err.message);
-    return "Chyba při volání AI.";
-  }
 }
 
-async function checkStocks() {
-  console.log("1️⃣ Prověřuji akcie a zprávy...");
-  let alerts = [];
+async function runAgent() {
+    console.log("🚀 Analyzuji trh a sentiment...");
+    const results = [];
+    for (const ticker of STOCKS) {
+        const data = await getStockData(ticker);
+        if (data) {
+            console.log(`✅ ${ticker}: ${data.sentiment > 0 ? '📈' : data.sentiment < 0 ? '📉' : '😐'} (${data.sentiment})`);
+            results.push(data);
+        }
+    }
 
-  for (const ticker of STOCKS) {
-    const { price, change } = await getStockPrice(ticker);
-    const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${ticker}+stock+news&hl=en-US`);
-    const news = feed.items.slice(0, 3).map(n => n.title);
-    
-    console.log(`🔍 ${ticker}: ${price} (${change.toFixed(2)}%)`);
+    const aiSummary = await groq.chat.completions.create({
+        messages: [{
+            role: "system",
+            content: "Jsi analytik. Shrň 3 nejdůležitější události z dodaných dat v češtině. Buď stručný."
+        }, {
+            role: "user",
+            content: JSON.stringify(results.filter(r => r.news.length > 0))
+        }],
+        model: "llama-3.3-70b-versatile",
+    }).then(res => res.choices[0]?.message?.content).catch(() => "Shrnutí nedostupné.");
 
-    // --- ŘEŠENÍ 1: Přímé titulky (Vždy spolehlivé) ---
-    const newsList = news.map(title => `- ${title}`).join("\n");
-    
-    // --- ŘEŠENÍ 2: AI analýza ---
-    const aiSummary = await getHuggingFaceAnalysis(ticker, news);
+    const priceList = results.map(d => {
+        let icon = d.sentiment > 0.2 ? "🟢" : d.sentiment < -0.2 ? "🔴" : "⚪";
+        return `${icon} ${d.ticker.padEnd(5)} | ${d.price.toFixed(2).padStart(8)} | ${d.change.toFixed(2).padStart(6)}% | Senti: ${d.sentiment.toFixed(1)}`;
+    }).join("\n");
 
-    alerts.push(
-      `📌 ${ticker} | Cena: ${price} | Změna: ${change.toFixed(2)}%\n` +
-      `📰 Zprávy:\n${newsList}\n` +
-      `🤖 AI Shrnutí: ${aiSummary}\n` +
-      `---------------------------------`
-    );
-  }
+    const emailBody = `
+=== REPORT TRHU (Sentiment & Ceny) ===
 
-  if (alerts.length > 0) {
-    console.log("2️⃣ Posílám email...");
+Stav | Ticker|   Cena     | Změna   | Nálada
+-------------------------------------------
+${priceList}
+
+(Legenda: 🟢 Pozitivní, 🔴 Negativní, ⚪ Neutrální)
+
+---
+🤖 HLAVNÍ POSTŘEHY:
+${aiSummary}
+    `;
+
     const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.MAIL_USER, pass: process.env.GMAIL_PASS }
+        service: "gmail",
+        auth: { user: process.env.MAIL_USER, pass: process.env.GMAIL_PASS }
     });
 
     await transporter.sendMail({
-      from: `"Stock Agent" <${process.env.MAIL_USER}>`,
-      to: EMAIL_RECIPIENT,
-      subject: `Stock Report: MSFT & NVDA`,
-      text: alerts.join("\n\n")
+        from: `"Stock AI Agent" <${process.env.MAIL_USER}>`,
+        to: EMAIL_RECIPIENT,
+        subject: `Market Sentiment Report: ${new Date().toLocaleDateString()}`,
+        text: emailBody
     });
-    console.log("✅ Hotovo.");
-  }
+
+    console.log("✅ Email odeslán.");
 }
 
-checkStocks().catch(console.error);
+runAgent().catch(console.error);
