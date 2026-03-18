@@ -54,39 +54,45 @@ async function saveHistory(results) {
 // --- ANALÝZA A ZÍSKÁVÁNÍ DAT ---
 
 async function getStockAnalysis(ticker, data, portfolioInfo, lastHistory) {
-    if (!data.news || data.news.length === 0) return "Žádné aktuální zprávy k analýze.";
+    if (!data.news || data.news.length === 0) return "⚠️ Nedostatek čerstvých zpráv pro relevatní analýzu.";
     
-    let portfolioContext = "Tuto akcii zatím nevlastníš (pouze sledování).";
+    let portfolioContext = "Není v portfoliu.";
     if (portfolioInfo) {
         const pnl = ((data.price - portfolioInfo.avgPrice) / portfolioInfo.avgPrice) * 100;
-        portfolioContext = `Vlastníš: ${portfolioInfo.shares} ks, nákupní cena: ${portfolioInfo.avgPrice} USD, aktuální P/L: ${pnl.toFixed(2)}%.`;
+        portfolioContext = `POZOR: Máš v tom peníze! Držíš ${portfolioInfo.shares} ks, tvůj aktuální zisk/ztráta je ${pnl.toFixed(2)}%.`;
     }
 
-    let historyContext = "První záznam této akcie v systému.";
+    let historyContext = "";
     if (lastHistory) {
         const diff = ((data.price - lastHistory.price) / lastHistory.price) * 100;
-        historyContext = `Od posledního reportu změna ceny o ${diff.toFixed(2)}% (původně ${lastHistory.price} USD).`;
+        historyContext = `Od včerejška se cena pohnula o ${diff.toFixed(2)}%.`;
     }
+
+    const systemPrompt = `Jsi elitní seniorní analytik z Wall Street. Tvým úkolem je poskytnout bleskový, NEKOMPROMISNÍ komentář k akcii. 
+    Nepoužívej fráze jako 'analytik říká' nebo 'podle stránek'. Jdi přímo k věci. 
+    Hledej souvislost mezi zprávami a pohybem ceny. Buď kritický. 
+    Struktura: 1. Co se děje teď. 2. Dopad na tvoji pozici/portfolio. 3. Verdikt.
+    Odpovídej česky, stručně, max 3-4 úderné věty.`;
+
+    const userPrompt = `
+    AKTIVA: ${ticker} | CENA: ${data.price} USD (${data.change.toFixed(2)}%)
+    HISTORICKÝ POSUN: ${historyContext}
+    PORTFOLIO KONTEXT: ${portfolioContext}
+    ROZSAH 52 TÝDNŮ: ${data.metrics.range}
+    TITULKY ZPRÁV: ${data.news.map(n => n.title).join(" | ")}
+    `;
 
     try {
         const response = await groq.chat.completions.create({
-            messages: [{
-                role: "system",
-                content: `Jsi špičkový akciový analytik. Analyzuj data a zprávy. Odpovídej česky, stručně (max 3 věty). 
-                Na konec přidej JEDNO doporučení: [KOUPIT / DRŽET / REDUKOVAT / SLEDOVAT].`
-            }, {
-                role: "user",
-                content: `Ticker: ${ticker} | Cena: ${data.price} USD (${data.change.toFixed(2)}%)
-                Historie: ${historyContext}
-                Metriky: 52W Rozsah: ${data.metrics.range}
-                Portfolio: ${portfolioContext}
-                Zprávy: ${data.news.map(n => n.title).join(" | ")}`
-            }],
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.3,
+            temperature: 0.2, // Snížení na 0.2 zajistí, že AI bude méně "ukecaná" a více faktická
         });
-        return response.choices[0]?.message?.content || "Analýza nedostupná.";
-    } catch (e) { return "Chyba při generování AI analýzy."; }
+        return response.choices[0]?.message?.content || "Analýza selhala.";
+    } catch (e) { return "Chyba AI modulu."; }
 }
 
 async function getStockData(ticker) {
