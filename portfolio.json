@@ -51,5 +51,6 @@
   "CRDO": { "shares": 6, "avgPrice": 121.96 },
   "NUVB": { "shares": 54, "avgPrice": 6.60 },
   "MSFT": { "shares": 2.5, "avgPrice": 485.48 },
-  "TTWO": { "shares": 6.8, "avgPrice": 241.20 }
+  "TTWO": { "shares": 6.8, "avgPrice": 241.20 },
+  "O": { "shares": 5, "avgPrice": 64.54 }
 }
