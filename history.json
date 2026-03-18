@@ -1,1 +1,57 @@
-{}
+{
+  "MSFT": {
+    "price": 397.53,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový trh zaznamenal pokles ceny akcií Microsoftu (MSFT) o 0,47 % na 397,53 USD. Navzdory poklesu ceny, společnost pokračuje ve zveřejňování silných provozních výsledků a některé investiční společnosti, jako je Advisory Services Network LLC, zvyšují své podíly v MSFT. \n\nDoporučení: [DRŽET]"
+  },
+  "NVDA": {
+    "price": 181.536,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový analytik z Investor's Business Daily považuje Nvidia za perspektivní, ale cena akcie zůstává v rozmezí. Podle veteránského analytika ze stránky thestreet.com je Nvidia dobrá volba, ale cena akcie je ovlivněna různými faktory. Cena akcie Nvidia se aktuálně pohybuje kolem 181,54 USD, což je mírně pod maximem za 52 týdnů.\n\nDoporučení: SLEDOVAT"
+  },
+  "ASML": {
+    "price": 1375,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový trh zaznamenal omezený růst, nicméně ASML si udržuje pozornost investorů. Cena akcie ASML se currently pohybuje kolem 1375 USD, což je stále pod maximem z posledních 52 týdnů. \n\nDoporučení: SLEDOVAT"
+  },
+  "RIOT": {
+    "price": 14.509,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový trh Riot Platforms (RIOT) zaznamenal mírný pokles o 1,16 % na 14,509 USD. Historicky se cena akcie pohybovala v rozmezí 6,19 - 23,93 USD za posledních 52 týdnů. Navzdory dnešnímu poklesu akcie v minulosti vykazovala růst, například o 2,67 % a 3,65 % v předchozích dnech.\n\nDoporučení: SLEDOVAT"
+  },
+  "O": {
+    "price": 63.555,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový trh Realty Income Corp. (O) zaznamenal pokles o 0,85 % na cenu 63,555 USD. Navzdory poklesu akcie, einige analytici udržují své hodnocení a dokonce zvyšují cílovou cenu. \n\nDoporučení: [DRŽET]"
+  },
+  "MDB": {
+    "price": 272.39,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Cena akcie MongoDB (MDB) se aktuálně pohybuje kolem 272,39 USD, což je jen mírný nárůst o 0,04%. Director Merriman prodal 12 000 akcií v rámci plánu 10b5-1, což může být považováno za negativní signál. \nDoporučení: SLEDOVAT"
+  },
+  "V": {
+    "price": 307.24,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový trh ukazuje mírný pokles ceny akcie V o 0,38%. Historicky se cena pohybovala v rozmezí 299,00 - 375,51 USD. S ohledem na aktuální situaci a zprávy, které naznačují možný růst některých souvisejících akcií, je třeba sledovat vývoj akcie V.\n\n[DOPORUČENÍ: SLEDOVAT]"
+  },
+  "AVGO": {
+    "price": 324.429,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Cena akcie AVGO se pohybuje na 324,43 USD, což je zvýšení o 0,97 %. Akcie má široký 52týdenní rozsah od 138,10 do 414,61 USD. \n\nDoporučení: SLEDOVAT"
+  },
+  "IREN": {
+    "price": 41.875,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Akciový trh zaznamenal pokles ceny akcie IREN o 2,53%, což může být způsobeno obecnou nervozitou na trhu. Navzdory poklesu ceny jsou některé zprávy optimistické, zejména díky aktivitám společnosti v oblasti AI a Bitcoinu. \n\nDoporučení: SLEDOVAT"
+  },
+  "GOOG": {
+    "price": 310.65,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Cena akcie GOOG se aktuálně nachází na 310,65 USD, což představuje denní růst o 0,40 %. Akcie má široký 52týdenní rozsah od 142,66 do 350,15 USD. \nDoporučení: SLEDOVAT"
+  },
+  "TSLA": {
+    "price": 400.108,
+    "date": "2026-03-18T13:38:20.031Z",
+    "analysis": "Aktuální cena akcie TSLA je 400,11 USD, což je mírný nárůst o 0,21 %. Akcie má historicky široký rozsah od 214,25 do 498,83 USD. \n\nDoporučení: SLEDOVAT"
+  }
+}
