@@ -10,7 +10,7 @@ const parser = new Parser();
 // --- KONFIGURACE ---
 const STOCKS = ["MSFT", "NVDA", "ASML", "RIOT", "O", "MDB", "V", "AVGO", "IREN", "GOOG", "TSLA"]; 
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
-const BATCH_SIZE = 5; // Zpracování po skupinách kvůli limitům API
+const BATCH_SIZE = 5; 
 
 // --- POMOCNÉ FUNKCE PRO DATA ---
 
@@ -54,17 +54,15 @@ async function saveHistory(results) {
 // --- ANALÝZA A ZÍSKÁVÁNÍ DAT ---
 
 async function getStockAnalysis(ticker, data, portfolioInfo, lastHistory) {
-    if (!data.news.length) return "Žádné aktuální zprávy k analýze.";
+    if (!data.news || data.news.length === 0) return "Žádné aktuální zprávy k analýze.";
     
-    // Kontext portfolia
     let portfolioContext = "Tuto akcii zatím nevlastníš (pouze sledování).";
     if (portfolioInfo) {
         const pnl = ((data.price - portfolioInfo.avgPrice) / portfolioInfo.avgPrice) * 100;
         portfolioContext = `Vlastníš: ${portfolioInfo.shares} ks, nákupní cena: ${portfolioInfo.avgPrice} USD, aktuální P/L: ${pnl.toFixed(2)}%.`;
     }
 
-    // Kontext historie
-    let historyContext = "První záznam této akcie.";
+    let historyContext = "První záznam této akcie v systému.";
     if (lastHistory) {
         const diff = ((data.price - lastHistory.price) / lastHistory.price) * 100;
         historyContext = `Od posledního reportu změna ceny o ${diff.toFixed(2)}% (původně ${lastHistory.price} USD).`;
@@ -80,7 +78,7 @@ async function getStockAnalysis(ticker, data, portfolioInfo, lastHistory) {
                 role: "user",
                 content: `Ticker: ${ticker} | Cena: ${data.price} USD (${data.change.toFixed(2)}%)
                 Historie: ${historyContext}
-                Metriky: P/E: ${data.metrics.pe}, 52W Rozsah: ${data.metrics.range}
+                Metriky: 52W Rozsah: ${data.metrics.range}
                 Portfolio: ${portfolioContext}
                 Zprávy: ${data.news.map(n => n.title).join(" | ")}`
             }],
@@ -93,14 +91,23 @@ async function getStockAnalysis(ticker, data, portfolioInfo, lastHistory) {
 
 async function getStockData(ticker) {
     try {
-        const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`);
+        // POUŽITÍ STABILNÍHO V8 ENDPOINTU
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
         const json = await res.json();
-        const detail = json.quoteResponse.result[0];
-        if (!detail) return null;
+        
+        const result = json.chart?.result?.[0];
+        if (!result) {
+            console.warn(`⚠️ Yahoo nevrátilo data pro ${ticker}`);
+            return null;
+        }
+
+        const meta = result.meta;
+        const price = meta.regularMarketPrice;
+        const prevClose = meta.previousClose;
+        const change = ((price - prevClose) / prevClose) * 100;
 
         const metrics = {
-            pe: detail.trailingPE ? detail.trailingPE.toFixed(2) : "N/A",
-            range: `${detail.fiftyTwoWeekLow?.toFixed(2)} - ${detail.fiftyTwoWeekHigh?.toFixed(2)}`
+            range: `${meta.fiftyTwoWeekLow?.toFixed(2) || '?'} - ${meta.fiftyTwoWeekHigh?.toFixed(2) || '?'}`
         };
 
         const feed = await parser.parseURL(`https://news.google.com/rss/search?q=${ticker}+stock+news&hl=en-US`);
@@ -119,14 +126,14 @@ async function getStockData(ticker) {
 
         return {
             ticker,
-            price: detail.regularMarketPrice,
-            change: detail.regularMarketChangePercent,
+            price,
+            change,
             metrics,
             news: recentNews.slice(0, 3),
             allRecentNews: recentNews
         };
     } catch (err) {
-        console.error(`❌ Chyba u ${ticker}:`, err.message);
+        console.error(`❌ Kritická chyba u ${ticker}:`, err.message);
         return null;
     }
 }
@@ -140,7 +147,7 @@ async function runAgent() {
     const history = await getHistory();
     const results = [];
 
-    // Paralelní zpracování ve shlucích (Batching)
+    // Zpracování ve shlucích (Batching)
     for (let i = 0; i < STOCKS.length; i += BATCH_SIZE) {
         const batch = STOCKS.slice(i, i + BATCH_SIZE);
         console.log(`📦 Analyzuji skupinu: ${batch.join(", ")}`);
@@ -148,6 +155,7 @@ async function runAgent() {
         const batchPromises = batch.map(async (ticker) => {
             const data = await getStockData(ticker);
             if (data) {
+                // Přidáme analýzu k datům
                 data.analysis = await getStockAnalysis(ticker, data, portfolio[ticker], history[ticker]);
                 return data;
             }
@@ -156,6 +164,11 @@ async function runAgent() {
 
         const batchResults = await Promise.all(batchPromises);
         results.push(...batchResults.filter(r => r !== null));
+    }
+
+    if (results.length === 0) {
+        console.error("❌ Žádná data nebyla stažena. Report nebude odeslán.");
+        return;
     }
 
     const globalTopNews = results
@@ -179,7 +192,7 @@ async function runAgent() {
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px;">
                     <div>
                         <span style="font-size: 1.6em; font-weight: bold;">${d.ticker}</span>
-                        ${isOwned ? '<span style="margin-left: 10px; background: #3498db; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7em;">PORTFOLIO</span>' : ''}
+                        ${isOwned ? '<span style="margin-left: 10px; background: #3498db; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; vertical-align: middle;">PORTFOLIO</span>' : ''}
                     </div>
                     <div style="text-align: right;">
                         <div style="font-size: 1.3em; font-weight: bold; color: ${color};">${d.price.toFixed(2)} USD</div>
@@ -187,12 +200,13 @@ async function runAgent() {
                     </div>
                 </div>
                 
-                <div style="background: #eef2f7; border-left: 5px solid #2c3e50; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
-                    <strong>🤖 AI Analýza & Doporučení:</strong><br>
+                <div style="background: #eef2f7; border-left: 5px solid #2c3e50; padding: 15px; margin-bottom: 15px; border-radius: 4px; line-height: 1.5;">
+                    <strong style="color: #34495e;">🤖 AI Analýza & Doporučení:</strong><br>
                     ${d.analysis.replace(/\n/g, '<br>')}
                 </div>
 
                 <div style="font-size: 0.85em; color: #555;">
+                    <strong style="color: #7f8c8d;">Zprávy k tickeru:</strong><br>
                     ${d.news.map(n => `<div style="margin-top: 5px;">• <a href="${n.link}" style="color: #3498db; text-decoration: none;">${n.title}</a> <span style="color: #999;">(${n.dateStr})</span></div>`).join('')}
                 </div>
             </div>
@@ -201,9 +215,12 @@ async function runAgent() {
 
     htmlContent += `
             <div style="margin-top: 40px; padding: 20px; background: #2c3e50; border-radius: 12px; color: white;">
-                <h2 style="color: #3498db; font-size: 1.1em;">🔥 TRŽNÍ PULS (Top zprávy)</h2>
+                <h2 style="color: #3498db; font-size: 1.1em; text-transform: uppercase;">🔥 Tržní puls (Nejnovější zprávy)</h2>
                 ${globalTopNews.map(n => `<div style="margin-bottom: 8px; font-size: 0.85em; border-bottom: 1px solid #3e4f5f; padding-bottom: 4px;"><b>${n.ticker}</b>: ${n.title}</div>`).join('')}
             </div>
+            <p style="font-size: 0.7em; text-align: center; color: #999; margin-top: 20px;">
+                Generováno AI Agentem • ${new Date().toLocaleString('cs-CZ')}
+            </p>
         </div>
     `;
 
