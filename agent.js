@@ -5,45 +5,43 @@ import fs from "fs/promises";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// TESTOVACÍ REŽIM: Pouze jeden ticker pro ověření stability a API dat
 const STOCKS = ["NVDA"]; 
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
 
 async function getStockData(ticker) {
     try {
-        const [pRes, iRes] = await Promise.all([
+        const [pRes, iRes, nRes] = await Promise.all([
             fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`),
-            fetch(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${ticker}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`)
+            fetch(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${ticker}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`),
+            fetch(`https://newsapi.org/v2/everything?q=${ticker}+stock&pageSize=5&sortBy=publishedAt&apiKey=${process.env.NEWS_API_KEY}`)
         ]);
         
         const pJson = await pRes.json();
         const iJson = await iRes.json();
-        const p = pJson["Global Quote"];
+        const nJson = await nRes.json();
         
+        const p = pJson["Global Quote"];
         if (!p || !p["05. price"]) return null;
 
         const price = parseFloat(p["05. price"]);
         const target = parseFloat(iJson["AnalystTargetPrice"]) || null;
-        const pe = iJson["PERatio"] && iJson["PERatio"] !== "None" ? parseFloat(iJson["PERatio"]).toFixed(1) : "N/A";
-        const upside = target ? ((target - price) / price * 100).toFixed(1) : "N/A";
+        const news = nJson.articles?.map(a => a.title).join(" | ") || "Žádné čerstvé zprávy.";
 
         return {
             ticker: ticker.toUpperCase(),
-            name: iJson["Name"] || ticker,
             price,
             change: parseFloat(p["10. change percent"].replace('%', '')),
             targetPrice: target,
-            upside,
-            pe
+            upside: target ? ((target - price) / price * 100).toFixed(1) : "N/A",
+            pe: iJson["PERatio"] && iJson["PERatio"] !== "None" ? parseFloat(iJson["PERatio"]).toFixed(1) : "N/A",
+            news
         };
     } catch (e) { return null; }
 }
 
 async function runAgent() {
     let portfolioFile = {};
-    try {
-        portfolioFile = JSON.parse(await fs.readFile("./portfolio.json", "utf-8"));
-    } catch (e) {}
+    try { portfolioFile = JSON.parse(await fs.readFile("./portfolio.json", "utf-8")); } catch (e) {}
 
     const portfolioResults = [];
     for (const t of STOCKS) {
@@ -51,8 +49,8 @@ async function runAgent() {
         if (data) {
             const analysis = await groq.chat.completions.create({
                 messages: [
-                    { role: "system", content: "Jsi seniorní analytik. Piš česky, stručně. 1. DEBATA (2 věty), 2. FUNDAMENTY, 3. VERDIKT." },
-                    { role: "user", content: `Ticker: ${data.ticker}, Cena: ${data.price}, Upside: ${data.upside}%, PE: ${data.pe}` }
+                    { role: "system", content: "Jsi elitní hedge-fund analytik. Nepiš obecné definice firmy ani aktuální cenu. Soustřeď se na: 1. AKTUÁLNÍ DĚNÍ (z dodaných zpráv), 2. RIZIKA/PŘÍLEŽITOSTI, 3. VERDIKT (KOUPIT/DRŽET/REDUKOVAT). Piš česky, stručně, v odrážkách." },
+                    { role: "user", content: `Ticker: ${data.ticker}, Upside: ${data.upside}%, PE: ${data.pe}, Zprávy: ${data.news}` }
                 ],
                 model: "llama-3.3-70b-versatile"
             });
@@ -60,22 +58,22 @@ async function runAgent() {
         }
     }
 
-    // TRENDING PŘÍLEŽITOSTI (Mimo tvé testovací portfolio)
+    // SEKCE: Dnešní příležitosti (Mimo portfolio)
     const trendingRes = await fetch(`https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey=${process.env.NEWS_API_KEY}`);
     const trendingJson = await trendingRes.json();
-    const headlines = trendingJson.articles?.slice(0, 10).map(a => a.title).join(" ") || "";
+    const headlines = trendingJson.articles?.slice(0, 15).map(a => a.title).join(" | ") || "";
 
     const marketOps = await groq.chat.completions.create({
         messages: [
-            { role: "system", content: "Z těchto zpráv identifikuj 3-5 zajímavých akciových tickerů (mimo tvé portfolio), které mají aktuálně momentum nebo pozitivní news. U každého napiš 1 větu: Proč je to dnes příležitost." },
-            { role: "user", content: `Aktuální zprávy: ${headlines}` }
+            { role: "system", content: "Z titulků identifikuj 3 konkrétní tickery s největším aktuálním potenciálem. U každého napiš jeden pádný důvod. Piš česky." },
+            { role: "user", content: headlines }
         ],
         model: "llama-3.3-70b-versatile"
     });
 
+    // EMAIL SESTAVENÍ
     const usdCzkRate = 24.1;
     let totalValUsd = 0, totalInvUsd = 0;
-    
     portfolioResults.forEach(d => {
         const p = portfolioFile[d.ticker.toUpperCase()];
         if (p?.shares) {
@@ -88,35 +86,32 @@ async function runAgent() {
     const color = (totalValUsd - totalInvUsd) >= 0 ? "#27ae60" : "#c0392b";
 
     let html = `<div style="font-family: Arial; padding: 20px; background: #f4f7f9;">
-        <div style="background: white; padding: 25px; border-radius: 15px; border-bottom: 8px solid ${color}; text-align: center; margin-bottom: 20px;">
-            <h1 style="margin:0;">Portfolio Intelligence</h1>
-            <b style="font-size: 2.2em;">${Math.round(totalValUsd * usdCzkRate).toLocaleString('cs-CZ')} CZK</b><br>
-            <b style="color: ${color}; font-size: 1.2em;">${pnlPct}%</b>
+        <div style="background: white; padding: 20px; border-radius: 12px; border-bottom: 6px solid ${color}; text-align: center;">
+            <h1 style="margin:0; font-size: 1.4em;">Portfolio Update</h1>
+            <b style="font-size: 1.8em;">${Math.round(totalValUsd * usdCzkRate).toLocaleString('cs-CZ')} CZK</b><br>
+            <b style="color: ${color};">${pnlPct}%</b>
         </div>
 
-        <div style="background: #e1f5fe; padding: 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #03a9f4;">
-            <h3 style="margin-top:0; color: #0288d1;">🚀 Trending Příležitosti (Mimo Portfolio)</h3>
-            <div style="font-size: 0.95em; line-height: 1.5;">${marketOps.choices[0].message.content.replace(/\n/g, '<br>')}</div>
+        <div style="background: #fff9db; padding: 15px; border-radius: 10px; margin: 15px 0; border: 1px solid #f1c40f;">
+            <h3 style="margin:0; color: #f39c12;">🎯 Dnešní příležitosti</h3>
+            <div style="font-size: 0.9em;">${marketOps.choices[0].message.content.replace(/\n/g, '<br>')}</div>
         </div>`;
 
     portfolioResults.forEach(d => {
-        html += `<div style="background: white; padding: 15px; margin-top: 10px; border-radius: 10px; border-left: 6px solid #34495e;">
+        html += `<div style="background: white; padding: 15px; margin-top: 10px; border-radius: 8px; border-left: 5px solid #34495e;">
             <div style="display:flex; justify-content: space-between; font-weight:bold;">
                 <span>${d.ticker}</span>
                 <span style="color: ${d.change >= 0 ? '#27ae60' : '#c0392b'};">${d.price} USD (${d.change}%)</span>
             </div>
-            <div style="font-size: 0.85em; color: #7f8c8d; margin-top: 5px;">Target: ${d.targetPrice || 'N/A'} | Upside: <b>${d.upside}%</b> | P/E: ${d.pe}</div>
-            <div style="background: #2c3e50; color: #ecf0f1; padding: 12px; border-radius: 6px; font-size: 0.9em; margin-top: 10px;">${d.analysis.replace(/\n/g, '<br>')}</div>
+            <div style="font-size: 0.8em; color: #7f8c8d;">Target: ${d.targetPrice || 'N/A'} | Upside: ${d.upside}% | P/E: ${d.pe}</div>
+            <div style="background: #2c3e50; color: white; padding: 12px; border-radius: 5px; font-size: 0.85em; margin-top: 8px; line-height: 1.5;">
+                ${d.analysis.replace(/\n/g, '<br>')}
+            </div>
         </div>`;
     });
 
     const transporter = nodemailer.createTransport({ service: "gmail", auth: { user: process.env.MAIL_USER, pass: process.env.GMAIL_PASS } });
-    await transporter.sendMail({
-        from: `"AI Agent" <${process.env.MAIL_USER}>`,
-        to: EMAIL_RECIPIENT,
-        subject: `Report: ${pnlPct}%`,
-        html: html + "</div>"
-    });
+    await transporter.sendMail({ from: `"AI Agent" <${process.env.MAIL_USER}>`, to: EMAIL_RECIPIENT, subject: `Report: ${pnlPct}%`, html: html + "</div>" });
 }
 
 runAgent().catch(console.error);
