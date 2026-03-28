@@ -22,6 +22,7 @@ const BENCHMARKS = [
 // ── POMOCNÉ FUNKCE ────────────────────────────────────────────────────────────
 
 function isTradingDay(date = new Date()) {
+  if (process.env.TEST_MODE === "true") return true;
   const day = date.getDay();
   return day !== 0 && day !== 6;
 }

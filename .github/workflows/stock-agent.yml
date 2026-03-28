@@ -43,7 +43,7 @@ jobs:
           MAIL_USER: ${{ secrets.MAIL_USER }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-          TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+          TEST_MODE: ${{ github.event.inputs.test_mode }}
 
       - name: Commit and push history update
         run: |
