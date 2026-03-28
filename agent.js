@@ -7,19 +7,14 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const STOCKS = ["GOOG", "MDB", "VKTX", "NVDA", "ONDS", "VUZI", "IPWR", "CPRX", "TAOP", "3CP.DE", "META", "ANGO", "ANNX", "MVIS", "AREC", "ASST", "NRDY", "ALAR", "TISC", "INDI", "NU", "IREN", "SOFI", "SOL", "CPNG", "V", "MDWD", "MVST", "CBAT", "JTAI", "SANA", "NVVE", "ATOS", "BTAI", "ARQ", "ENVX", "IRON", "GRYP", "NIO", "MRKR", "CAN", "QTBS", "HRMY", "ASBP", "RZLV", "OKLO", "GRAB", "AVGO", "RHM", "CRDO", "NUVB", "MSFT", "TTWO", "ASML", "RIOT", "O"];
 
-// Evropské tickery – měna EUR
 const EUR_TICKERS = new Set(["3CP.DE", "RHM", "ASML"]);
-
 const EMAIL_RECIPIENT = "jirijca@gmail.com";
 
-// Benchmarky
 const BENCHMARKS = [
   { ticker: "^GSPC", label: "S&P 500" },
   { ticker: "^IXIC", label: "NASDAQ" },
   { ticker: "^GDAXI", label: "DAX" },
 ];
-
-// ── POMOCNÉ FUNKCE ────────────────────────────────────────────────────────────
 
 function isTradingDay(date = new Date()) {
   if (process.env.TEST_MODE === "true") return true;
@@ -27,7 +22,6 @@ function isTradingDay(date = new Date()) {
   return day !== 0 && day !== 6;
 }
 
-// Načte live kurz měny vůči USD z Yahoo Finance
 async function fetchFxRate(fromCurrency) {
   try {
     const pair = `${fromCurrency}USD=X`;
@@ -41,7 +35,6 @@ async function fetchFxRate(fromCurrency) {
   }
 }
 
-// Načte historická data (OHLCV) z Yahoo Finance – vrátí pole close cen
 async function fetchHistoricalData(ticker) {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1y`;
@@ -50,33 +43,26 @@ async function fetchHistoricalData(ticker) {
     const json = await res.json();
     const result = json?.chart?.result?.[0];
     if (!result) return null;
-
     const closes = result.indicators?.quote?.[0]?.close ?? [];
     const timestamps = result.timestamp ?? [];
     const volumes = result.indicators?.quote?.[0]?.volume ?? [];
-
-    // Odfiltrujeme null hodnoty
     const data = closes
       .map((c, i) => ({ close: c, time: timestamps[i], volume: volumes[i] }))
       .filter(d => d.close !== null && d.close !== undefined);
-
     return data;
   } catch {
     return null;
   }
 }
 
-// Výpočet RSI (14)
 function calcRSI(closes, period = 14) {
   if (closes.length < period + 1) return null;
   let gains = 0, losses = 0;
-
   for (let i = closes.length - period; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
     if (diff >= 0) gains += diff;
     else losses += Math.abs(diff);
   }
-
   const avgGain = gains / period;
   const avgLoss = losses / period;
   if (avgLoss === 0) return 100;
@@ -84,14 +70,12 @@ function calcRSI(closes, period = 14) {
   return parseFloat((100 - 100 / (1 + rs)).toFixed(1));
 }
 
-// Výpočet SMA
 function calcSMA(closes, period) {
   if (closes.length < period) return null;
   const slice = closes.slice(-period);
   return parseFloat((slice.reduce((a, b) => a + b, 0) / period).toFixed(2));
 }
 
-// Procentuální změna za N dní
 function calcChange(closes, days) {
   if (closes.length < days + 1) return null;
   const from = closes[closes.length - 1 - days];
@@ -100,7 +84,6 @@ function calcChange(closes, days) {
   return parseFloat(((to - from) / from * 100).toFixed(2));
 }
 
-// Načte aktuální cenu + meta z Yahoo Finance
 async function fetchLivePrice(ticker) {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
@@ -117,14 +100,14 @@ async function fetchLivePrice(ticker) {
   }
 }
 
-// AI analýza – systémový prompt
 function buildSystemPrompt() {
   return (
-    "Jsi stručný burzovní analytik. Piš ČESKY. " +
-    "Zaměř se VÝHRADNĚ na události posledních 48 hodin. " +
-    "Pokud žádné relevantní nedávné zprávy neexistují, napiš: 'Žádné významné zprávy za posledních 48 h.' " +
-    "Na konci přidej SENTIMENT SKÓRE ve formátu: Sentiment: X/10 (kde 1=velmi negativní, 10=velmi pozitivní). " +
-    "Struktura (každý bod 1 věta): SEKTOR | HLAVNÍ TREND | KATALYZÁTOR (posledních 48 h) | VERDIKT | Sentiment: X/10"
+    "Jsi burzovní analytik. Piš ČESKY. Buď maximálně stručný. " +
+    "Zajímají tě POUZE konkrétní události posledních 48 hodin: earnings, akvizice, FDA schválení, právní spory, insiderské obchody, změny ratingu analytiků, makroekonomické zprávy přímo ovlivňující akcii. " +
+    "Pokud žádná taková konkrétní událost neproběhla, napiš POUZE: 'Žádné významné zprávy za posledních 48 h.' – nic víc. " +
+    "NIKDY nepíši obecné informace o firmě, sektoru ani dlouhodobých trendech. " +
+    "Pokud událost existuje: KATALYZÁTOR (1 věta) | DOPAD (1 věta) | Sentiment: X/10. " +
+    "Pokud neexistuje: pouze 'Žádné významné zprávy za posledních 48 h. Sentiment: X/10'."
   );
 }
 
@@ -139,13 +122,11 @@ async function analyzeWithGroq(ticker) {
   return completion.choices[0].message.content;
 }
 
-// Parsuje sentiment skóre z textu analýzy
 function parseSentiment(text) {
   const match = text.match(/Sentiment:\s*(\d+(?:\.\d+)?)\/10/i);
   return match ? parseFloat(match[1]) : null;
 }
 
-// Sektory pro diverzifikaci (zjednodušená klasifikace)
 const SECTOR_MAP = {
   GOOG: "Tech", MDB: "Tech", NVDA: "Tech", META: "Tech", MSFT: "Tech",
   AVGO: "Tech", CRDO: "Tech", ASML: "Tech", TTWO: "Tech",
@@ -163,11 +144,8 @@ const SECTOR_MAP = {
   JTAI: "AI/Tech", MVIS: "Tech", "3CP.DE": "Tech", RHM: "Defense", O: "REIT",
 };
 
-// ── HLAVNÍ FUNKCE ─────────────────────────────────────────────────────────────
-
 async function runAgent() {
 
-  // 1. KONTROLA OBCHODNÍHO DNE
   const today = new Date();
   if (!isTradingDay(today)) {
     const dayNames = ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"];
@@ -176,18 +154,15 @@ async function runAgent() {
   }
   console.log("🚀 Obchodní den potvrzen. Startuji agenta...");
 
-  // 2. LIVE FX KURZY
-  const usdCzk = (await fetchFxRate("USD")) ?? null;  // fallback níže
+  const usdCzk = (await fetchFxRate("USD")) ?? null;
   const eurUsd = await fetchFxRate("EUR");
   const eurCzk = eurUsd && usdCzk ? eurUsd * usdCzk : null;
   const usdCzkDisplay = usdCzk ? usdCzk.toFixed(2) : "N/A";
   const eurCzkDisplay = eurCzk ? eurCzk.toFixed(2) : "N/A";
-  // Pro výpočty fallback na pevné kurzy pokud Yahoo selže
   const USD_CZK = usdCzk ?? 24.1;
   const EUR_CZK = eurCzk ?? (24.1 * 1.08);
   console.log(`💱 Kurzy: 1 USD = ${usdCzkDisplay} CZK | 1 EUR = ${eurCzkDisplay} CZK`);
 
-  // 3. NAČTENÍ PORTFOLIA
   let portfolio = {};
   try {
     const data = await fs.readFile("./portfolio.json", "utf-8");
@@ -196,7 +171,6 @@ async function runAgent() {
     console.error("⚠️  portfolio.json nenalezen.");
   }
 
-  // 4. BENCHMARKY
   console.log("📊 Načítám benchmarky...");
   const benchmarkResults = [];
   for (const b of BENCHMARKS) {
@@ -214,7 +188,6 @@ async function runAgent() {
     await new Promise(r => setTimeout(r, 300));
   }
 
-  // 5. ZPRACOVÁNÍ AKCIÍ
   const results = [];
   let totalValCzk = 0;
   let totalInvCzk = 0;
@@ -226,12 +199,10 @@ async function runAgent() {
     const convRate = isEur ? EUR_CZK : USD_CZK;
     const currency = isEur ? "EUR" : "USD";
 
-    // Živá cena
     const liveData = await fetchLivePrice(ticker);
-    const currentPrice = liveData?.price ?? p.avgPrice ?? 0;
-    const priceSource = liveData?.price ? "live" : "offline";
+    const currentPrice = (liveData?.price && liveData.price > 0) ? liveData.price : (p.avgPrice ?? 0);
+    const priceSource = (liveData?.price && liveData.price > 0) ? "live" : "offline";
 
-    // Historická data + indikátory
     let rsi = null, sma50 = null, sma200 = null;
     let change1d = null, change7d = null, change30d = null;
 
@@ -246,19 +217,15 @@ async function runAgent() {
       change30d = calcChange(closes, 30);
     }
 
-    // P&L v CZK
     const posValCzk = currentPrice * p.shares * convRate;
     const posInvCzk = p.avgPrice * p.shares * convRate;
     totalValCzk += posValCzk;
     totalInvCzk += posInvCzk;
 
-    // Diverzifikace
     const sector = SECTOR_MAP[ticker] ?? "Ostatní";
     sectorMap[sector] = (sectorMap[sector] ?? 0) + posValCzk;
 
-    // AI analýza (Groq)
     let groqAnalysis = "Analýza nedostupná.";
-
     try {
       groqAnalysis = await analyzeWithGroq(ticker);
       console.log(`✅ ${ticker} – Groq OK`);
@@ -279,7 +246,6 @@ async function runAgent() {
     await new Promise(r => setTimeout(r, 200));
   }
 
-  // 6. SOUHRNNÁ AI ANALÝZA PORTFOLIA (Groq)
   console.log("🧠 Generuji souhrnnou analýzu portfolia...");
   let portfolioSummary = "";
   try {
@@ -288,7 +254,6 @@ async function runAgent() {
       .slice(0, 5)
       .map(r => `${r.ticker}: ${r.change1d !== null ? r.change1d + "% (1d)" : "N/A"}`)
       .join(", ");
-
     const completion = await groq.chat.completions.create({
       messages: [
         {
@@ -307,7 +272,6 @@ async function runAgent() {
     portfolioSummary = "Souhrnná analýza nedostupná.";
   }
 
-  // 7. VÝPOČET P&L A DIVERZIFIKACE
   const pnlCzk = totalValCzk - totalInvCzk;
   const pnlPct = totalInvCzk > 0 ? ((pnlCzk / totalInvCzk) * 100).toFixed(2) : "0.00";
   const pnlColor = pnlCzk >= 0 ? "#27ae60" : "#c0392b";
@@ -329,7 +293,6 @@ async function runAgent() {
       </tr>`;
     }).join("");
 
-  // 8. SESTAVENÍ HTML
   const changeCell = (val) => {
     if (val === null) return `<td style="padding:6px 10px; text-align:right; color:#bbb;">–</td>`;
     const c = val >= 0 ? "#27ae60" : "#c0392b";
@@ -343,7 +306,7 @@ async function runAgent() {
     return `<td style="padding:6px 10px; text-align:right; color:${c};">${rsi} <small>${label}</small></td>`;
   };
 
-  const smaCell = (price, sma, label) => {
+  const smaCell = (price, sma) => {
     if (sma === null) return `<td style="padding:6px 10px; text-align:right; color:#bbb;">–</td>`;
     const above = price > sma;
     const c = above ? "#27ae60" : "#c0392b";
@@ -352,15 +315,11 @@ async function runAgent() {
 
   let htmlBody = `
   <div style="font-family: Arial, sans-serif; max-width: 900px; margin: auto; background: #f4f6f8; padding: 20px; border-radius: 12px;">
-
-    <!-- HLAVIČKA -->
     <div style="text-align:center; margin-bottom:20px;">
       <h1 style="margin:0; color:#2c3e50; font-size:1.5em;">📈 Stock Insight Report</h1>
       <p style="color:#7f8c8d; margin:4px 0;">${dateStr}</p>
       <p style="color:#e67e22; font-size:0.8em; margin:0;">⏱ AI analýzy zahrnují pouze události posledních 48 hodin</p>
     </div>
-
-    <!-- PORTFOLIO SUMMARY -->
     <div style="background:white; padding:20px; border-radius:12px; border-top:6px solid ${pnlColor}; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.08); margin-bottom:20px;">
       <p style="margin:0; color:#7f8c8d; font-size:0.85em; text-transform:uppercase; letter-spacing:1px;">Hodnota portfolia</p>
       <b style="font-size:2.2em; color:#2c3e50;">${Math.round(totalValCzk).toLocaleString("cs-CZ")} CZK</b><br><br>
@@ -371,8 +330,6 @@ async function runAgent() {
         Kurz: 1 USD = ${usdCzkDisplay} CZK &nbsp;·&nbsp; 1 EUR = ${eurCzkDisplay} CZK &nbsp;·&nbsp; Ceny: live Yahoo Finance
       </p>
     </div>
-
-    <!-- BENCHMARKY -->
     <h3 style="color:#2c3e50; margin-bottom:10px;">🌍 Trhy dnes</h3>
     <table style="width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,0.08); margin-bottom:20px;">
       <thead>
@@ -395,8 +352,6 @@ async function runAgent() {
         </tr>`).join("")}
       </tbody>
     </table>
-
-    <!-- TABULKA POZIC -->
     <h3 style="color:#2c3e50; margin-bottom:10px;">💼 Pozice</h3>
     <table style="width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,0.08); margin-bottom:20px; font-size:0.8em;">
       <thead>
@@ -423,7 +378,6 @@ async function runAgent() {
     const posPnlColor = posPnl >= 0 ? "#27ae60" : "#c0392b";
     const rowBg = i % 2 === 0 ? "#fff" : "#f9fafb";
     const sentColor = r.sentiment >= 6 ? "#27ae60" : r.sentiment <= 4 ? "#c0392b" : "#e67e22";
-
     htmlBody += `
       <tr style="background:${rowBg};">
         <td style="padding:6px 10px; font-weight:bold; color:#2980b9;">${r.ticker} <small style="color:#999;">${r.currency}</small></td>
@@ -434,8 +388,8 @@ async function runAgent() {
         ${changeCell(r.change7d)}
         ${changeCell(r.change30d)}
         ${rsiCell(r.rsi)}
-        ${smaCell(r.currentPrice, r.sma50, "50")}
-        ${smaCell(r.currentPrice, r.sma200, "200")}
+        ${smaCell(r.currentPrice, r.sma50)}
+        ${smaCell(r.currentPrice, r.sma200)}
         <td style="padding:6px 10px; text-align:right; color:${posPnlColor}; font-weight:bold;">
           ${posPnl >= 0 ? "+" : ""}${Math.round(posPnl).toLocaleString("cs-CZ")}
         </td>
@@ -446,8 +400,6 @@ async function runAgent() {
   });
 
   htmlBody += `</tbody></table>
-
-    <!-- DIVERZIFIKACE -->
     <h3 style="color:#2c3e50; margin-bottom:10px;">🥧 Diverzifikace podle sektoru</h3>
     <table style="width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; box-shadow:0 2px 5px rgba(0,0,0,0.08); margin-bottom:20px; font-size:0.85em;">
       <thead>
@@ -460,14 +412,10 @@ async function runAgent() {
       </thead>
       <tbody>${sectorRows}</tbody>
     </table>
-
-    <!-- SOUHRNNÁ ANALÝZA -->
     <div style="background:white; border-left:5px solid #2980b9; padding:16px 20px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.08); margin-bottom:20px;">
       <h3 style="margin:0 0 10px 0; color:#2c3e50;">🧠 Souhrnná analýza portfolia</h3>
       <p style="font-size:0.9em; color:#333; line-height:1.7; margin:0;">${portfolioSummary.replace(/\n/g, "<br>")}</p>
     </div>
-
-    <!-- DETAILNÍ ANALÝZY -->
     <h3 style="color:#2c3e50; margin-bottom:12px;">🔍 Detailní analýzy (posledních 48 h)</h3>
   `;
 
@@ -485,22 +433,19 @@ async function runAgent() {
       </div>`;
   });
 
-  htmlBody += `</div>`; // hlavní wrapper
+  htmlBody += `</div>`;
 
-  // 9. ODESLÁNÍ E-MAILU
   try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: { user: process.env.MAIL_USER, pass: process.env.GMAIL_PASS },
     });
-
     await transporter.sendMail({
       from: `"Wealth Agent" <${process.env.MAIL_USER}>`,
       to: EMAIL_RECIPIENT,
       subject: `📈 Stock Insight | ${Math.round(totalValCzk).toLocaleString("cs-CZ")} CZK | ${pnlCzk >= 0 ? "▲" : "▼"}${pnlPct}%`,
       html: htmlBody,
     });
-
     console.log("✉️  Report odeslán na", EMAIL_RECIPIENT);
   } catch (err) {
     console.error("❌ Chyba při odesílání:", err.message);
