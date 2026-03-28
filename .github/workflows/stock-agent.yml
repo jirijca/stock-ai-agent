@@ -1,16 +1,14 @@
-name: AGENT21
+name: AGENT22
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
   schedule:
-    - cron: '0 15 * * *'
+    - cron: '30 14 * * 1-5'  # Po–Pá, 14:30 UTC = hodinu po otevření US trhů (15:30 ET)
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: write
 
@@ -36,24 +34,19 @@ jobs:
           MAIL_USER: ${{ secrets.MAIL_USER }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Commit and push history update
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 1. Dočasně schováme vytvořený history.json
-          git stash
-          
-          # 2. Bezpečný pull --rebase
+
           git pull --rebase origin main
-          
-          # 3. Vrátíme schovanou historii zpět
-          git stash pop || true
-          
-          # 4. Přidáme ji a uložíme
-          git add history.json || true
-          
+
+          if [ -f history.json ]; then
+            git add history.json
+          fi
+
           if git diff --cached --quiet; then
             echo "Žádné změny v historii k uložení."
           else
