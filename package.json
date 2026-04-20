@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/jirijca/stock-ai-agent#readme",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.6",
     "dotenv": "^17.3.1",
